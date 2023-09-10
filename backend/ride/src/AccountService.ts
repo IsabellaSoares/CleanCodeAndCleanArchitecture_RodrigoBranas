@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import CpfValidator from "./CpfValidator";
 import databaseConfig from "./database/connection";
+import type Ride from "./types/ride";
 
 const pgp = require("pg-promise")({});
 
@@ -42,5 +43,47 @@ export default class AccountService {
 		const [account] = await connection.query("select * from cccat13.account where account_id = $1", [accountId]);
 		await connection.$pool.end();
 		return account;
+	}
+
+	async request_ride (passengerId: string, from: { lat: number, long: number }, to: { lat: number, long: number }) {
+		const connection = pgp(databaseConfig);
+		try {
+			const account = await this.getAccount(passengerId);
+			if (!account.is_passenger) throw new Error('This user is not a passenger');
+			let rideAlredyExists = await this.getRidesByPassengerId(passengerId);
+			rideAlredyExists = rideAlredyExists.find((ride: Ride) => ride.status !== 'completed');
+			if (rideAlredyExists) throw new Error('This passenger already has an active ride');
+			const rideId = crypto.randomUUID();
+			const date = new Date();
+			await connection.query("insert into cccat13.ride (ride_id, passenger_id, driver_id, status, fare, distance, from_lat, from_long, to_lat, to_long, date) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)", [rideId, passengerId, null, "requested", null, null, from.lat, from.long, to.lat, to.long, date]);
+			return {
+				rideId
+			}
+		} finally {
+			await connection.$pool.end();
+		}
+	}
+
+	async accept_ride () {}
+
+	async getRide (rideId: string) {
+		const connection = pgp(databaseConfig);
+		const [ride] = await connection.query("select * from cccat13.ride where ride_id = $1", [rideId]);
+		await connection.$pool.end();
+		return ride;
+	}
+
+	async getRidesByPassengerId (passengerId: string) {
+		const connection = pgp(databaseConfig);
+		const rides = await connection.query("select * from cccat13.ride where passenger_id = $1", [passengerId]);
+		await connection.$pool.end();
+		return rides;
+	}
+
+	async deletePassenger (passengerId: string) {
+		const connection = pgp(databaseConfig);
+		await connection.query("delete from cccat13.ride where passenger_id = $1", [passengerId]);
+		await connection.query("delete from cccat13.account where account_id = $1", [passengerId]);
+		await connection.$pool.end();
 	}
 }
