@@ -1,5 +1,14 @@
 import AccountService from "../src/AccountService";
 
+const from = {
+	lat: 0,
+	long: 0
+}
+const to = {
+	lat: 1,
+	long: 1
+}
+
 test("Deve criar um passageiro", async function () {
 	const input = {
 		name: "John Doe",
@@ -96,14 +105,6 @@ test("Deve criar uma corrida", async function () {
 	const accountService = new AccountService();
 	const output = await accountService.signup(input);
 	const account = await accountService.getAccount(output.accountId);
-	const from = {
-		lat: 0,
-		long: 0
-	}
-	const to = {
-		lat: 1,
-		long: 1
-	}
 	const { rideId } = await accountService.request_ride(account.account_id, from, to);
 	const ride = await accountService.getRide(rideId);
 	expect(ride.ride_id).toBeDefined();
@@ -126,14 +127,6 @@ test("Não deve solicitar uma corrida caso o usuário não seja um passageiro", 
 	}
 	const accountService = new AccountService();
 	const notPassenger = await accountService.signup(input);
-	const from = {
-		lat: 0,
-		long: 0
-	}
-	const to = {
-		lat: 1,
-		long: 1
-	}
 	await expect(() => accountService.request_ride(notPassenger.accountId, from, to)).rejects.toThrow(new Error("This user is not a passenger"));
 	await accountService.deletePassenger(notPassenger.accountId);
 });
@@ -147,15 +140,109 @@ test("Não deve solicitar uma corrida caso o passageiro tenha uma corrida que ai
 	}
 	const accountService = new AccountService();
 	const passenger = await accountService.signup(input);
-	const from = {
-		lat: 0,
-		long: 0
-	}
-	const to = {
-		lat: 1,
-		long: 1
-	}
 	await accountService.request_ride(passenger.accountId, from, to);
 	await expect(() => accountService.request_ride(passenger.accountId, from, to)).rejects.toThrow(new Error("This passenger already has an active ride"));
 	await accountService.deletePassenger(passenger.accountId);
+});
+
+test("Deve aceitar uma corrida", async function () {
+	const inputPassenger = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: true
+	}
+	const accountService = new AccountService();
+	const outputPassenger = await accountService.signup(inputPassenger);
+	const { rideId } = await accountService.request_ride(outputPassenger.accountId, from, to);
+	const inputDriver = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: false,
+		isDriver: true,
+		carPlate: "AAA9999",
+	}
+	const outputDriver = await accountService.signup(inputDriver);
+	await accountService.accept_ride(outputDriver.accountId, rideId);
+	const ride = await accountService.getRide(rideId);
+	expect(ride.ride_id).toBe(rideId);
+	expect(ride.passenger_id).toBe(outputPassenger.accountId);
+	expect(ride.driver_id).toBe(outputDriver.accountId);
+	expect(ride.status).toBe('accepted');
+	await accountService.deletePassenger(outputPassenger.accountId);
+	await accountService.deletePassenger(outputDriver.accountId);
+});
+
+test("Não deve aceitar uma corrida caso o usuário não seja um motorista", async function () {
+	const input = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: true,
+		isDriver: false,
+	}
+	const accountService = new AccountService();
+	const notDriver = await accountService.signup(input);
+	await expect(() => accountService.accept_ride(notDriver.accountId, notDriver.accountId)).rejects.toThrow(new Error("This user is not a driver"));
+	await accountService.deletePassenger(notDriver.accountId);
+});
+
+test("Não deve aceitar uma corrida caso a corrida não tenha o status 'requested'", async function () {
+	const inputPassenger = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: true
+	}
+	const accountService = new AccountService();
+	const outputPassenger = await accountService.signup(inputPassenger);
+	const { rideId } = await accountService.request_ride(outputPassenger.accountId, from, to);
+	const inputDriver = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: false,
+		isDriver: true,
+		carPlate: "AAA9999",
+	}
+	const outputDriver = await accountService.signup(inputDriver);
+	await accountService.accept_ride(outputDriver.accountId, rideId);
+	await expect(() => accountService.accept_ride(outputDriver.accountId, rideId)).rejects.toThrow(new Error("This ride is not requested or is invalid"));
+	await accountService.deletePassenger(outputPassenger.accountId);
+	await accountService.deletePassenger(outputDriver.accountId);
+});
+
+test("Não deve aceitar uma corrida caso o motorista já tenha uma corrida ativa e que não foi completada", async function () {
+	const firstPassenger = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: true
+	}
+	const accountService = new AccountService();
+	const outputFirstPassenger = await accountService.signup(firstPassenger);
+	const { rideId: firstRideId } = await accountService.request_ride(outputFirstPassenger.accountId, from, to);
+	const inputDriver = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: false,
+		isDriver: true,
+		carPlate: "AAA9999",
+	}
+	const outputDriver = await accountService.signup(inputDriver);
+	await accountService.accept_ride(outputDriver.accountId, firstRideId);
+	const secondPassenger = {
+		name: "John Doe",
+		email: `john.doe${Math.random()}@gmail.com`,
+		cpf: "95818705552",
+		isPassenger: true
+	}
+	const outputSecondPassenger = await accountService.signup(secondPassenger);
+	const { rideId: secondRideId } = await accountService.request_ride(outputSecondPassenger.accountId, from, to);
+	await expect(() => accountService.accept_ride(outputDriver.accountId, secondRideId)).rejects.toThrow(new Error("This driver already has a ride in progress"));
+	await accountService.deletePassenger(outputFirstPassenger.accountId);
+	await accountService.deletePassenger(outputSecondPassenger.accountId);
+	await accountService.deletePassenger(outputDriver.accountId);
 });

@@ -2,7 +2,7 @@ type Ride = {
     ride_id: string,
 	passenger_id: string,
 	driver_id: string,
-	status: 'requested' | 'completed',
+	status: 'requested' | 'completed' | 'accepted' | 'in_progress',
 	fare: Number,
 	distance: Number,
 	from_lat: Number,

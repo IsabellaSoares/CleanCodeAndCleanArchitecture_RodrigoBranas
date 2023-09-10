@@ -64,7 +64,21 @@ export default class AccountService {
 		}
 	}
 
-	async accept_ride () {}
+	async accept_ride (driverId: string, rideId: string) {
+		const connection = pgp(databaseConfig);
+		try {
+			const account = await this.getAccount(driverId);
+			if (!account.is_driver) throw new Error('This user is not a driver');
+			let requestedRide = await this.getRide(rideId);
+			if (requestedRide.status !== 'requested') throw new Error('This ride is not requested or is invalid');
+			const driverRides = await this.getRidesByDriverId(driverId);
+			const driverAlreadyAcceptedRide = driverRides.find((ride: Ride) => ride.status === 'accepted' || ride.status === 'in_progress');
+			if (driverAlreadyAcceptedRide) throw new Error('This driver already has a ride in progress');
+			await this.acceptRide(rideId, driverId);
+		} finally {
+			await connection.$pool.end();
+		}
+	}
 
 	async getRide (rideId: string) {
 		const connection = pgp(databaseConfig);
@@ -80,9 +94,22 @@ export default class AccountService {
 		return rides;
 	}
 
+	async getRidesByDriverId (driverId: string) {
+		const connection = pgp(databaseConfig);
+		const rides = await connection.query("select * from cccat13.ride where driver_id = $1", [driverId]);
+		await connection.$pool.end();
+		return rides;
+	}
+
+	async acceptRide (rideId: string, driverId: string) {
+		const connection = pgp(databaseConfig);
+		await connection.query("update cccat13.ride set status = 'accepted', driver_id = $1 where ride_id = $2", [driverId, rideId]);
+		await connection.$pool.end();
+	}
+
 	async deletePassenger (passengerId: string) {
 		const connection = pgp(databaseConfig);
-		await connection.query("delete from cccat13.ride where passenger_id = $1", [passengerId]);
+		await connection.query("delete from cccat13.ride where passenger_id = $1 OR driver_id = $1", [passengerId]);
 		await connection.query("delete from cccat13.account where account_id = $1", [passengerId]);
 		await connection.$pool.end();
 	}
